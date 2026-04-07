@@ -1,0 +1,7 @@
+{
+  "name": "Kettlebell Rep Tracker",
+  "description": "Track your kettlebell reps using AI pose detection. Features real-time tracking, timer, and performance stats.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
