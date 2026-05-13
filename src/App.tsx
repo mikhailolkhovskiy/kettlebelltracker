@@ -408,13 +408,13 @@ export default function App() {
     let drawWidth, drawHeight, offsetX, offsetY;
 
     if (imgRatio > canvasRatio) {
-      // Image is wider than canvas relative to its height
+      // Image is wider than canvas relative to its height -> Match widths for contain
       drawWidth = canvasWidth;
       drawHeight = canvasWidth / imgRatio;
       offsetX = 0;
       offsetY = (canvasHeight - drawHeight) / 2;
     } else {
-      // Image is taller than canvas relative to its width
+      // Image is taller than canvas relative to its width -> Match heights for contain
       drawHeight = canvasHeight;
       drawWidth = canvasHeight * imgRatio;
       offsetX = (canvasWidth - drawWidth) / 2;
