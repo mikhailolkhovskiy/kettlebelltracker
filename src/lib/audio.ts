@@ -1,4 +1,4 @@
-export function playBeep(frequency = 880, duration = 0.5) {
+export function playBeep(frequency = 880, duration = 0.5, type: OscillatorType = 'sine', volume = 0.1) {
   const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
   const oscillator = audioCtx.createOscillator();
   const gainNode = audioCtx.createGain();
@@ -6,9 +6,9 @@ export function playBeep(frequency = 880, duration = 0.5) {
   oscillator.connect(gainNode);
   gainNode.connect(audioCtx.destination);
 
-  oscillator.type = 'sine';
+  oscillator.type = type;
   oscillator.frequency.setValueAtTime(frequency, audioCtx.currentTime);
-  gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+  gainNode.gain.setValueAtTime(volume, audioCtx.currentTime);
   gainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
 
   oscillator.start();
