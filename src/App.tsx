@@ -114,6 +114,25 @@ export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const recordingCanvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [dimensions, setDimensions] = useState({ width: 1280, height: 720 });
+
+  useEffect(() => {
+    const updateDimensions = () => {
+      if (containerRef.current) {
+        setDimensions({
+          width: containerRef.current.clientWidth,
+          height: containerRef.current.clientHeight
+        });
+      } else {
+        setDimensions({ width: window.innerWidth, height: window.innerHeight });
+      }
+    };
+
+    updateDimensions();
+    window.addEventListener('resize', updateDimensions);
+    return () => window.removeEventListener('resize', updateDimensions);
+  }, []);
   
   // Settings state with persistence
   const [lang, setLang] = useState<'en' | 'ru'>(() => {
@@ -421,10 +440,28 @@ export default function App() {
       offsetY = 0;
     }
 
-    // 1. Draw to Recording Canvas (Clean video + HUD, no skeleton)
+    // 1. Draw to Recording Canvas (Clean video + HUD, no skeleton) - Always 1280x720 for standard video
+    const recWidth = recordingCanvasRef.current.width;
+    const recHeight = recordingCanvasRef.current.height;
+    const recRatio = recWidth / recHeight;
+    
+    let rDrawWidth, rDrawHeight, rOffsetX, rOffsetY;
+    if (imgRatio > recRatio) {
+      rDrawWidth = recWidth;
+      rDrawHeight = recWidth / imgRatio;
+      rOffsetX = 0;
+      rOffsetY = (recHeight - rDrawHeight) / 2;
+    } else {
+      rDrawHeight = recHeight;
+      rDrawWidth = recHeight * imgRatio;
+      rOffsetX = (recWidth - rDrawWidth) / 2;
+      rOffsetY = 0;
+    }
+
     recordingCtx.save();
-    recordingCtx.clearRect(0, 0, canvasWidth, canvasHeight);
-    recordingCtx.drawImage(results.image, offsetX, offsetY, drawWidth, drawHeight);
+    recordingCtx.clearRect(0, 0, recWidth, recHeight);
+    recordingCtx.drawImage(results.image, rOffsetX, rOffsetY, rDrawWidth, rDrawHeight);
+    recordingCtx.restore();
 
     // 2. Draw to Main Canvas (Video + Skeleton + HUD)
     canvasCtx.save();
@@ -802,7 +839,7 @@ export default function App() {
   }, [seconds, reps, leftReps, rightReps]);
 
   return (
-    <div className={`fixed inset-0 ${isDarkMode ? 'bg-black text-neutral-100' : 'bg-neutral-50 text-neutral-900'} font-sans selection:bg-emerald-500/30 overflow-hidden`}>
+    <div ref={containerRef} className={`fixed inset-0 ${isDarkMode ? 'bg-black text-neutral-100' : 'bg-neutral-50 text-neutral-900'} font-sans selection:bg-emerald-500/30 overflow-hidden`}>
       {/* Background: Camera View */}
       <div className="absolute inset-0 flex items-center justify-center bg-black">
         {cameraError ? (
@@ -829,8 +866,8 @@ export default function App() {
             <canvas
               ref={canvasRef}
               className="w-full h-full object-contain"
-              width={1280}
-              height={720}
+              width={dimensions.width}
+              height={dimensions.height}
             />
             <canvas
               ref={recordingCanvasRef}
