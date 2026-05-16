@@ -114,25 +114,6 @@ export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const recordingCanvasRef = useRef<HTMLCanvasElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [dimensions, setDimensions] = useState({ width: 1280, height: 720 });
-
-  useEffect(() => {
-    const updateDimensions = () => {
-      if (containerRef.current) {
-        setDimensions({
-          width: containerRef.current.clientWidth,
-          height: containerRef.current.clientHeight
-        });
-      } else {
-        setDimensions({ width: window.innerWidth, height: window.innerHeight });
-      }
-    };
-
-    updateDimensions();
-    window.addEventListener('resize', updateDimensions);
-    return () => window.removeEventListener('resize', updateDimensions);
-  }, []);
   
   // Settings state with persistence
   const [lang, setLang] = useState<'en' | 'ru'>(() => {
@@ -411,80 +392,43 @@ export default function App() {
   const onResults = useCallback((results: Results) => {
     if (!canvasRef.current || !recordingCanvasRef.current || !videoRef.current || !isComponentMounted.current) return;
 
-    const canvasCtx = canvasRef.current.getContext('2d');
-    const recordingCtx = recordingCanvasRef.current.getContext('2d');
+    const canvas = canvasRef.current;
+    const recCanvas = recordingCanvasRef.current;
+    const canvasCtx = canvas.getContext('2d');
+    const recordingCtx = recCanvas.getContext('2d');
     if (!canvasCtx || !recordingCtx) return;
 
-    // Calculate dimensions to maintain aspect ratio (letterboxing/contain)
+    // Use source image dimensions for canvas resolution to maintain quality and ratio
     const imgWidth = results.image.width;
     const imgHeight = results.image.height;
-    const canvasWidth = canvasRef.current.width;
-    const canvasHeight = canvasRef.current.height;
 
-    const imgRatio = imgWidth / imgHeight;
-    const canvasRatio = canvasWidth / canvasHeight;
-
-    let drawWidth, drawHeight, offsetX, offsetY;
-
-    if (imgRatio > canvasRatio) {
-      // Image is wider than canvas relative to its height -> Match widths for contain
-      drawWidth = canvasWidth;
-      drawHeight = canvasWidth / imgRatio;
-      offsetX = 0;
-      offsetY = (canvasHeight - drawHeight) / 2;
-    } else {
-      // Image is taller than canvas relative to its width -> Match heights for contain
-      drawHeight = canvasHeight;
-      drawWidth = canvasHeight * imgRatio;
-      offsetX = (canvasWidth - drawWidth) / 2;
-      offsetY = 0;
+    if (canvas.width !== imgWidth || canvas.height !== imgHeight) {
+      canvas.width = imgWidth;
+      canvas.height = imgHeight;
+    }
+    if (recCanvas.width !== imgWidth || recCanvas.height !== imgHeight) {
+      recCanvas.width = imgWidth;
+      recCanvas.height = imgHeight;
     }
 
-    // 1. Draw to Recording Canvas (Clean video + HUD, no skeleton) - Always 1280x720 for standard video
-    const recWidth = recordingCanvasRef.current.width;
-    const recHeight = recordingCanvasRef.current.height;
-    const recRatio = recWidth / recHeight;
-    
-    let rDrawWidth, rDrawHeight, rOffsetX, rOffsetY;
-    if (imgRatio > recRatio) {
-      rDrawWidth = recWidth;
-      rDrawHeight = recWidth / imgRatio;
-      rOffsetX = 0;
-      rOffsetY = (recHeight - rDrawHeight) / 2;
-    } else {
-      rDrawHeight = recHeight;
-      rDrawWidth = recHeight * imgRatio;
-      rOffsetX = (recWidth - rDrawWidth) / 2;
-      rOffsetY = 0;
-    }
-
+    // 1. Draw to Recording Canvas (Clean video + HUD, no skeleton)
     recordingCtx.save();
-    recordingCtx.clearRect(0, 0, recWidth, recHeight);
-    recordingCtx.drawImage(results.image, rOffsetX, rOffsetY, rDrawWidth, rDrawHeight);
+    recordingCtx.clearRect(0, 0, imgWidth, imgHeight);
+    recordingCtx.drawImage(results.image, 0, 0, imgWidth, imgHeight);
     recordingCtx.restore();
 
     // 2. Draw to Main Canvas (Video + Skeleton + HUD)
     canvasCtx.save();
-    canvasCtx.clearRect(0, 0, canvasWidth, canvasHeight);
-    canvasCtx.drawImage(results.image, offsetX, offsetY, drawWidth, drawHeight);
+    canvasCtx.clearRect(0, 0, imgWidth, imgHeight);
+    canvasCtx.drawImage(results.image, 0, 0, imgWidth, imgHeight);
 
     if (results.poseLandmarks) {
-      // We need to transform the landmarks to match the drawn image position and size
-      // since drawing_utils draw landmarks relative to canvas size
-      canvasCtx.save();
-      // Adjust landmarks drawing to the letterboxed area
-      // However, MediaPipe's drawing_utils expect to draw on the whole canvas.
-      // So we translate and scale the context so that 0-1 matches our image area.
-      canvasCtx.translate(offsetX, offsetY);
-      canvasCtx.scale(drawWidth / canvasWidth, drawHeight / canvasHeight);
-      
       drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS,
         { color: '#00FF00', lineWidth: 4 });
       drawLandmarks(canvasCtx, results.poseLandmarks,
         { color: '#FF0000', lineWidth: 2 });
-      canvasCtx.restore();
 
-      // Landmarks: 15 is left wrist, 16 is right wrist, 0 is nose, 11/12 are shoulders, 13/14 are elbows, 23/24 are hips
+      // Landmarks logic
       const landmarks = results.poseLandmarks;
       if (!landmarks || landmarks.length < 25) return;
 
@@ -621,10 +565,10 @@ export default function App() {
 
       // Draw HUD only on Recording Canvas, not on Main Canvas (to avoid redundancy with React UI)
       if (currentIsActive) {
-        const width = canvasRef.current.width;
-        const height = canvasRef.current.height;
+        const recWidth = recordingCanvasRef.current.width;
+        const recHeight = recordingCanvasRef.current.height;
 
-        const drawHUD = (ctx: CanvasRenderingContext2D) => {
+        const drawHUD = (ctx: CanvasRenderingContext2D, w: number, h: number) => {
           const padding = 40;
           
           const drawRoundedRect = (c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) => {
@@ -642,8 +586,8 @@ export default function App() {
           // Boxes for Recording HUD
           ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
           drawRoundedRect(ctx, padding, padding, 220, 100, 24); // Timer
-          drawRoundedRect(ctx, width - 220 - padding, padding, 220, 100, 24); // Reps
-          drawRoundedRect(ctx, width - 220 - padding, height - 100 - padding, 220, 100, 24); // RPM
+          drawRoundedRect(ctx, w - 220 - padding, padding, 220, 100, 24); // Reps
+          drawRoundedRect(ctx, w - 220 - padding, h - 100 - padding, 220, 100, 24); // RPM
 
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
@@ -659,23 +603,23 @@ export default function App() {
           // Reps
           ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
           ctx.font = 'bold 18px Inter, sans-serif';
-          ctx.fillText(t.totalReps.toUpperCase(), width - 110 - padding, padding + 30);
+          ctx.fillText(t.totalReps.toUpperCase(), w - 110 - padding, padding + 30);
           ctx.fillStyle = 'white';
           ctx.font = 'bold 54px Inter, sans-serif';
-          ctx.fillText(currentReps.toString(), width - 110 - padding, padding + 70);
+          ctx.fillText(currentReps.toString(), w - 110 - padding, padding + 70);
 
           // RPM
           ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
           ctx.font = 'bold 18px Inter, sans-serif';
-          ctx.fillText(t.rpm.toUpperCase(), width - 110 - padding, height - 70 - padding);
+          ctx.fillText(t.rpm.toUpperCase(), w - 110 - padding, h - 70 - padding);
           ctx.fillStyle = primaryColor;
           ctx.font = 'bold 44px Inter, sans-serif';
-          ctx.fillText(currentSpeed.toString(), width - 110 - padding, height - 30 - padding);
+          ctx.fillText(currentSpeed.toString(), w - 110 - padding, h - 30 - padding);
           
           ctx.restore();
         };
 
-        drawHUD(recordingCtx);
+        drawHUD(recordingCtx, recWidth, recHeight);
       }
     }
     canvasCtx.restore();
@@ -839,7 +783,7 @@ export default function App() {
   }, [seconds, reps, leftReps, rightReps]);
 
   return (
-    <div ref={containerRef} className={`fixed inset-0 ${isDarkMode ? 'bg-black text-neutral-100' : 'bg-neutral-50 text-neutral-900'} font-sans selection:bg-emerald-500/30 overflow-hidden`}>
+    <div className={`fixed inset-0 ${isDarkMode ? 'bg-black text-neutral-100' : 'bg-neutral-50 text-neutral-900'} font-sans selection:bg-emerald-500/30 overflow-hidden`}>
       {/* Background: Camera View */}
       <div className="absolute inset-0 flex items-center justify-center bg-black">
         {cameraError ? (
@@ -866,14 +810,10 @@ export default function App() {
             <canvas
               ref={canvasRef}
               className="w-full h-full object-contain"
-              width={dimensions.width}
-              height={dimensions.height}
             />
             <canvas
               ref={recordingCanvasRef}
               className="hidden"
-              width={1280}
-              height={720}
             />
           </>
         ) : (
