@@ -7,7 +7,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Pose, Results, POSE_CONNECTIONS } from '@mediapipe/pose';
 import { Camera } from '@mediapipe/camera_utils';
 import { drawConnectors, drawLandmarks } from '@mediapipe/drawing_utils';
-import { Play, Square, Timer, Activity, Zap, Info, Plus, Minus, Camera as CameraIcon, CameraOff, History, ChevronDown, ChevronUp, Video, VideoOff, Download, Settings as SettingsIcon, Moon, Sun, Languages, Palette, X, Volume2, VolumeX } from 'lucide-react';
+import { Play, Square, Timer, Activity, Zap, Info, Plus, Minus, Camera as CameraIcon, CameraOff, History, ChevronDown, ChevronUp, Video, VideoOff, Download, Settings as SettingsIcon, Moon, Sun, Languages, Palette, X, Volume2, VolumeX, Layout } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useWakeLock } from './hooks/useWakeLock';
 import { playBeep } from './lib/audio';
@@ -18,7 +18,7 @@ const REP_THRESHOLD_DOWN = 0.5;
 
 const translations = {
   en: {
-    title: "KETTLEBELL TRACKER",
+    title: "TRACKER",
     start: "START WORKOUT",
     stop: "STOP WORKOUT",
     preparing: "PREPARING...",
@@ -41,7 +41,7 @@ const translations = {
     dark: "Dark",
     light: "Light",
     emerald: "Emerald",
-    blue: "Blue",
+    purple: "Purple",
     rose: "Rose",
     amber: "Amber",
     voice: "Voice Feedback",
@@ -57,10 +57,19 @@ const translations = {
     workoutSummary: "Workout Summary",
     close: "Close",
     fontSize: "Font Size",
-    autoStart: "Auto-start"
+    autoStart: "Auto-start",
+    hudPosition: "HUD Placement",
+    posCenter: "Center",
+    posTop: "Top Center",
+    posTopLeft: "Top Left",
+    posTopRight: "Top Right",
+    posLeft: "Left",
+    posRight: "Right",
+    posBottomLeft: "Bottom Left",
+    posBottomRight: "Bottom Right"
   },
   ru: {
-    title: "ТРЕКЕР ГИРИ",
+    title: "ТРЕКЕР",
     start: "НАЧАТЬ ТРЕНИРОВКУ",
     stop: "ОСТАНОВИТЬ",
     preparing: "ПОДГОТОВКА...",
@@ -83,7 +92,7 @@ const translations = {
     dark: "Темный",
     light: "Светлый",
     emerald: "Изумруд",
-    blue: "Синий",
+    purple: "Фиолетовый",
     rose: "Роза",
     amber: "Янтарь",
     voice: "Голосовой счет",
@@ -99,15 +108,46 @@ const translations = {
     workoutSummary: "Итоги тренировки",
     close: "Закрыть",
     fontSize: "Размер шрифта",
-    autoStart: "Автостарт"
+    autoStart: "Автостарт",
+    hudPosition: "Положение экрана",
+    posCenter: "По центру",
+    posTop: "Вверху по центру",
+    posTopLeft: "Слева вверху",
+    posTopRight: "Справа вверху",
+    posLeft: "Слева",
+    posRight: "Справа",
+    posBottomLeft: "Слева внизу",
+    posBottomRight: "Справа внизу"
   }
 };
 
 const themes = {
   emerald: { primary: '#10b981', bg: 'bg-emerald-500', text: 'text-emerald-500', border: 'border-emerald-500', shadow: 'shadow-emerald-500/20' },
-  blue: { primary: '#3b82f6', bg: 'bg-blue-500', text: 'text-blue-500', border: 'border-blue-500', shadow: 'shadow-blue-500/20' },
+  purple: { primary: '#9208a2', bg: 'bg-[#9208a2]', text: 'text-[#9208a2]', border: 'border-[#9208a2]', shadow: 'shadow-[#9208a2]/20' },
   rose: { primary: '#f43f5e', bg: 'bg-rose-500', text: 'text-rose-500', border: 'border-rose-500', shadow: 'shadow-rose-500/20' },
   amber: { primary: '#f59e0b', bg: 'bg-amber-500', text: 'text-amber-500', border: 'border-amber-500', shadow: 'shadow-amber-500/20' },
+};
+
+const hudPositions = {
+  'center': 'top-1/4 left-1/2 -translate-x-1/2 items-center text-center',
+  'top': 'top-20 left-1/2 -translate-x-1/2 items-center text-center',
+  'top-left': 'top-24 left-6 md:left-12 items-start text-left',
+  'top-right': 'top-24 right-6 md:right-12 items-end text-right',
+  'left': 'top-1/2 -translate-y-1/2 left-6 md:left-12 items-start text-left',
+  'right': 'top-1/2 -translate-y-1/2 right-6 md:right-12 items-end text-right',
+  'bottom-left': 'bottom-28 left-6 md:left-12 items-start text-left',
+  'bottom-right': 'bottom-28 right-6 md:right-12 items-end text-right'
+};
+
+const hudTransformOrigins: Record<string, string> = {
+  'center': 'center center',
+  'top': 'top center',
+  'top-left': 'top left',
+  'top-right': 'top right',
+  'left': 'left center',
+  'right': 'right center',
+  'bottom-left': 'bottom left',
+  'bottom-right': 'bottom right'
 };
 
 export default function App() {
@@ -126,7 +166,8 @@ export default function App() {
     return 'en';
   });
   const [theme, setTheme] = useState<keyof typeof themes>(() => {
-    return (localStorage.getItem('kettlebell-theme') as keyof typeof themes) || 'emerald';
+    const saved = localStorage.getItem('kettlebell-theme') as keyof typeof themes;
+    return (saved && themes[saved]) ? saved : 'emerald';
   });
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('kettlebell-darkmode');
@@ -152,6 +193,10 @@ export default function App() {
   const [isAutoStartEnabled, setIsAutoStartEnabled] = useState(() => {
     return localStorage.getItem('kettlebell-autostart') === 'true';
   });
+  const [hudPosition, setHudPosition] = useState<string>(() => {
+    return localStorage.getItem('kettlebell-hud-position') || 'center';
+  });
+  const [isSliderInteracting, setIsSliderInteracting] = useState(false);
 
   const [showSettings, setShowSettings] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
@@ -166,6 +211,7 @@ export default function App() {
   useEffect(() => localStorage.setItem('kettlebell-camera', selectedCameraId), [selectedCameraId]);
   useEffect(() => localStorage.setItem('kettlebell-hud-scale', hudScale.toString()), [hudScale]);
   useEffect(() => localStorage.setItem('kettlebell-autostart', isAutoStartEnabled.toString()), [isAutoStartEnabled]);
+  useEffect(() => localStorage.setItem('kettlebell-hud-position', hudPosition), [hudPosition]);
 
   const t = translations[lang];
   const currentTheme = themes[theme];
@@ -835,59 +881,86 @@ export default function App() {
             exit={{ opacity: 0, y: -20 }}
             className="absolute top-0 left-0 right-0 p-4 md:p-6 flex items-start justify-between z-20 bg-gradient-to-b from-black/60 to-transparent pointer-events-none"
           >
-            <div className="flex flex-col pointer-events-auto min-w-0">
-              <h1 className="text-[clamp(1rem,4.5vw,1.5rem)] md:text-3xl font-black tracking-tight text-white flex items-center gap-2 drop-shadow-lg whitespace-nowrap overflow-hidden">
-                <Activity className={`shrink-0 ${currentTheme.text}`} size={20} />
-                <span className="truncate">{t.title}</span>
+            <div className="flex flex-col pointer-events-auto min-w-0 w-fit">
+              {/* Sporty Brand Logo as text */}
+              <div className="flex flex-col mb-1 font-simpler select-none leading-[0.9]">
+                <span className="text-2xl md:text-3xl font-bold tracking-wider text-white italic drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
+                  RUDNEV &
+                </span>
+                <span className="text-2xl md:text-3xl font-bold tracking-wider text-white italic drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
+                  KETTLEBELLS
+                </span>
+              </div>
+
+              <h1 className="self-end text-[clamp(1rem,5vw,1.75rem)] md:text-4xl font-bold tracking-widest text-white flex items-center gap-2 drop-shadow-lg whitespace-nowrap overflow-hidden font-sporty uppercase">
+                <span className={`truncate ${currentTheme.text}`}>{t.title}</span>
               </h1>
-              <div className="flex items-center gap-2 mt-1">
+            </div>
+
+            <div className="flex flex-col items-end gap-2 pointer-events-auto shrink-0 ml-4">
+              <div className="flex items-center gap-2 md:gap-4">
+                {availableCameras.length > 0 && (
+                  <div className="relative">
+                    <div className={`p-2.5 rounded-2xl border backdrop-blur-md transition-all ${isDarkMode ? 'bg-black/60 border-white/20 text-white hover:bg-black/80' : 'bg-white/80 border-black/10 text-neutral-900 hover:bg-white'}`}>
+                      {isCameraEnabled ? <CameraIcon size={18} /> : <CameraOff size={18} />}
+                    </div>
+                    <select
+                      value={selectedCameraId}
+                      onChange={(e) => setSelectedCameraId(e.target.value)}
+                      className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                      title={t.selectCamera}
+                    >
+                      <option value="off">{t.cameraDisabled}</option>
+                      {availableCameras.map((camera, idx) => (
+                        <option key={camera.deviceId} value={camera.deviceId}>
+                          {camera.label || `${t.camera} ${idx + 1}`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <button 
+                  onClick={() => setShowSettings(true)}
+                  className={`p-2.5 rounded-2xl backdrop-blur-md border transition-all ${isDarkMode ? 'bg-black/60 border-white/20 text-white hover:bg-black/80' : 'bg-white/80 border-black/10 text-neutral-900 hover:bg-white'}`}
+                >
+                  <SettingsIcon size={18} />
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2 mt-1 mr-1">
                 <div className="w-2 h-2 rounded-full bg-neutral-500" />
                 <span className="text-white/60 text-[9px] font-bold uppercase tracking-widest drop-shadow-sm whitespace-nowrap">
                   Ready
                 </span>
               </div>
             </div>
-
-            <div className="flex items-center gap-2 md:gap-4 pointer-events-auto shrink-0 ml-4">
-              {availableCameras.length > 0 && (
-                <div className="relative">
-                  <div className={`p-2.5 rounded-2xl border backdrop-blur-md transition-all ${isDarkMode ? 'bg-black/60 border-white/20 text-white hover:bg-black/80' : 'bg-white/80 border-black/10 text-neutral-900 hover:bg-white'}`}>
-                    {isCameraEnabled ? <CameraIcon size={18} /> : <CameraOff size={18} />}
-                  </div>
-                  <select
-                    value={selectedCameraId}
-                    onChange={(e) => setSelectedCameraId(e.target.value)}
-                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                    title={t.selectCamera}
-                  >
-                    <option value="off">{t.cameraDisabled}</option>
-                    {availableCameras.map((camera, idx) => (
-                      <option key={camera.deviceId} value={camera.deviceId}>
-                        {camera.label || `${t.camera} ${idx + 1}`}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              <button 
-                onClick={() => setShowSettings(true)}
-                className={`p-2.5 rounded-2xl backdrop-blur-md border transition-all ${isDarkMode ? 'bg-black/60 border-white/20 text-white hover:bg-black/80' : 'bg-white/80 border-black/10 text-neutral-900 hover:bg-white'}`}
-              >
-                <SettingsIcon size={18} />
-              </button>
-            </div>
           </motion.div>
         )}
       </AnimatePresence>
 
       {/* 2. HUD: Stats (Time, Reps, RPM) */}
-      <div className="absolute inset-x-0 top-1/4 flex flex-col items-center justify-center pointer-events-none z-20">
+      <div 
+        className={`absolute pointer-events-none z-20 flex flex-col transition-all duration-300 ease-in-out ${
+          hudPositions[hudPosition as keyof typeof hudPositions] || hudPositions['center']
+        }`}
+      >
         <div 
-          className="flex flex-col items-center gap-2 transition-transform duration-300 ease-out"
-          style={{ transform: `scale(${hudScale})` }}
+          className={`flex flex-col gap-2 transition-transform duration-300 ease-out ${
+            hudPosition.endsWith('left') ? 'items-start text-left' :
+            hudPosition.endsWith('right') ? 'items-end text-right' :
+            'items-center text-center'
+          }`}
+          style={{ 
+            transform: `scale(${hudScale})`,
+            transformOrigin: hudTransformOrigins[hudPosition as keyof typeof hudTransformOrigins] || 'center center'
+          }}
         >
           {/* Large Timer */}
-          <div className="flex flex-col items-center">
+          <div className={`flex flex-col ${
+            hudPosition.endsWith('left') ? 'items-start' : 
+            hudPosition.endsWith('right') ? 'items-end' : 
+            'items-center'
+          }`}>
             <span className="text-white/40 text-[10px] font-black uppercase tracking-[0.4em] mb-1 drop-shadow-sm">{t.time}</span>
             <div className={`text-6xl md:text-9xl font-black tabular-nums transition-all ${isActive ? 'text-white drop-shadow-[0_0_30px_rgba(255,255,255,0.3)]' : 'text-white/30'}`}>
               {formatTime(seconds)}
@@ -910,64 +983,71 @@ export default function App() {
             </div>
           </div>
         </div>
-
-        {/* HUD Font Size Slider - Vertical on the right side */}
-        <AnimatePresence>
-          {!isActive && countdown === null && (
-            <motion.div 
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 20 }}
-              className="fixed right-4 md:right-8 top-1/2 -translate-y-1/2 pointer-events-auto flex flex-col items-center gap-4 bg-black/40 backdrop-blur-xl p-3 md:p-4 rounded-full border border-white/10 z-30"
-            >
-              <div className="flex flex-col items-center gap-4 h-48 md:h-64 py-2">
-                <button onClick={() => setHudScale(prev => Math.min(2, prev + 0.1))} className="text-white/40 hover:text-white transition-colors">
-                  <Plus size={16} />
-                </button>
-                
-                <div className="relative flex-1 w-8 flex items-center justify-center">
-                  <input
-                    type="range"
-                    min="0.5"
-                    max="2"
-                    step="0.05"
-                    value={hudScale}
-                    onChange={(e) => setHudScale(parseFloat(e.target.value))}
-                    className={`absolute w-32 md:w-48 h-1.5 appearance-none bg-white/20 rounded-full cursor-pointer -rotate-90`}
-                    style={{ accentColor: currentTheme.primary }}
-                  />
-                </div>
-
-                <button onClick={() => setHudScale(prev => Math.max(0.5, prev - 0.1))} className="text-white/40 hover:text-white transition-colors">
-                  <Minus size={16} />
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
+
+      {/* HUD Font Size Slider - Vertical on the right side */}
+      <AnimatePresence>
+        {!isActive && countdown === null && (
+          <motion.div 
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: isSliderInteracting ? 1 : 0.4, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            whileHover={{ opacity: 1 }}
+            className="fixed right-4 md:right-8 top-1/2 -translate-y-1/2 pointer-events-auto flex flex-col items-center gap-4 bg-black/40 backdrop-blur-xl p-3 md:p-4 rounded-full border border-white/10 z-30 transition-opacity duration-300 ease-in-out"
+            onMouseEnter={() => setIsSliderInteracting(true)}
+            onMouseLeave={() => setIsSliderInteracting(false)}
+            onTouchStart={() => setIsSliderInteracting(true)}
+            onTouchEnd={() => setIsSliderInteracting(false)}
+            onFocus={() => setIsSliderInteracting(true)}
+            onBlur={() => setIsSliderInteracting(false)}
+          >
+            <div className="flex flex-col items-center gap-4 h-48 md:h-64 py-2">
+              <button onClick={() => setHudScale(prev => Math.min(2, prev + 0.1))} className="text-white/40 hover:text-white transition-colors">
+                <Plus size={16} />
+              </button>
+              
+              <div className="relative flex-1 w-8 flex items-center justify-center">
+                <input
+                  type="range"
+                  min="0.5"
+                  max="2"
+                  step="0.05"
+                  value={hudScale}
+                  onChange={(e) => setHudScale(parseFloat(e.target.value))}
+                  className={`absolute w-32 md:w-48 h-1.5 appearance-none bg-white/20 rounded-full cursor-pointer -rotate-90`}
+                  style={{ accentColor: currentTheme.primary }}
+                />
+              </div>
+
+              <button onClick={() => setHudScale(prev => Math.max(0.5, prev - 0.1))} className="text-white/40 hover:text-white transition-colors">
+                <Minus size={16} />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* 3. Bottom Controls: Start/Stop */}
       <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
         {!isActive && countdown === null ? (
           <button
             onClick={handleStart}
-            className={`group flex items-center justify-center gap-3 md:gap-4 ${currentTheme.bg} hover:scale-105 active:scale-95 text-neutral-950 px-8 md:px-12 py-4 md:py-6 rounded-[2rem] font-black text-[clamp(1rem,4vw,1.5rem)] md:text-2xl transition-all shadow-2xl ${currentTheme.shadow} whitespace-nowrap`}
+            className={`group flex items-center justify-center gap-2.5 md:gap-3.5 ${currentTheme.bg} hover:scale-105 active:scale-95 text-neutral-950 px-6 md:px-9 py-3 md:py-4.5 rounded-[20px] font-black text-sm md:text-lg transition-all shadow-2xl ${currentTheme.shadow} whitespace-nowrap`}
           >
-            <Play className="fill-current shrink-0" size={20} />
+            <Play className="fill-current shrink-0" size={16} />
             {t.start}
           </button>
         ) : isActive ? (
           <button
             onClick={stopWorkout}
-            className="group flex items-center justify-center gap-3 md:gap-4 bg-red-600 hover:bg-red-500 hover:scale-105 active:scale-95 text-white px-8 md:px-12 py-4 md:py-6 rounded-[2rem] font-black text-[clamp(1rem,4vw,1.5rem)] md:text-2xl transition-all shadow-2xl shadow-red-500/40 whitespace-nowrap"
+            className="group flex items-center justify-center gap-2.5 md:gap-3.5 bg-red-600 hover:bg-red-500 hover:scale-105 active:scale-95 text-white px-6 md:px-9 py-3 md:py-4.5 rounded-[20px] font-black text-sm md:text-lg transition-all shadow-2xl shadow-red-500/40 whitespace-nowrap"
           >
-            <Square className="fill-current shrink-0" size={20} />
+            <Square className="fill-current shrink-0" size={16} />
             {t.stop}
           </button>
         ) : (
-          <div className="flex items-center gap-3 bg-white/10 backdrop-blur-xl text-white/50 px-8 py-4 rounded-[2rem] font-black text-lg md:text-xl border border-white/10 whitespace-nowrap">
-            <Timer size={20} className="animate-spin-slow shrink-0" />
+          <div className="flex items-center gap-2.5 bg-white/10 backdrop-blur-xl text-white/50 px-6 py-3 rounded-[20px] font-black text-sm md:text-base border border-white/10 whitespace-nowrap">
+            <Timer size={16} className="animate-spin-slow shrink-0" />
             {t.preparing}
           </div>
         )}
@@ -1185,6 +1265,31 @@ export default function App() {
                     >
                       {t.beepNone}
                     </button>
+                  </div>
+                </div>
+
+                {/* HUD Position */}
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center gap-2 text-neutral-500 text-xs font-bold uppercase tracking-widest">
+                    <Layout size={14} />
+                    {t.hudPosition}
+                  </div>
+                  <div className="relative">
+                    <select
+                      value={hudPosition}
+                      onChange={(e) => setHudPosition(e.target.value)}
+                      className={`w-full py-3 px-4 rounded-xl font-bold appearance-none outline-none border-2 transition-all ${isDarkMode ? 'bg-neutral-800 border-neutral-700 text-white focus:border-emerald-500' : 'bg-neutral-100 border-neutral-200 text-neutral-900 focus:border-emerald-500'}`}
+                    >
+                      <option value="center">{t.posCenter}</option>
+                      <option value="top">{t.posTop}</option>
+                      <option value="top-left">{t.posTopLeft}</option>
+                      <option value="top-right">{t.posTopRight}</option>
+                      <option value="left">{t.posLeft}</option>
+                      <option value="right">{t.posRight}</option>
+                      <option value="bottom-left">{t.posBottomLeft}</option>
+                      <option value="bottom-right">{t.posBottomRight}</option>
+                    </select>
+                    <ChevronDown size={18} className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-neutral-500" />
                   </div>
                 </div>
 

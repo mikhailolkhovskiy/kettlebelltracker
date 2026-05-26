@@ -1,5 +1,28 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: 'SimplerCmDnm';
+  src: url('../ofont.ru_a_SimplerCmDnm.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'SportyCustom';
+  src: url('../12003.OTF') format('opentype');
+  font-weight: normal;
+  font-style: normal;
+}
+
+@layer utilities {
+  .font-simpler {
+    font-family: 'SimplerCmDnm', sans-serif;
+  }
+  .font-sporty {
+    font-family: 'SportyCustom', sans-serif;
+  }
+}
+
 @layer utilities {
   .custom-scrollbar::-webkit-scrollbar {
     width: 4px;
