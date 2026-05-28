@@ -247,6 +247,7 @@ export default function App() {
   const [lastHand, setLastHand] = useState<'left' | 'right' | null>(null);
   const [speed, setSpeed] = useState(0);
   const [repTimestamps, setRepTimestamps] = useState<number[]>([]);
+  const [isBeepFlashing, setIsBeepFlashing] = useState(false);
   
   // Workout log
   const [workoutLog, setWorkoutLog] = useState<{ minute: number; left: number; right: number; total: number }[]>([]);
@@ -304,10 +305,10 @@ export default function App() {
   // Use a ref for state values
 
   // Use a ref for state values needed in the callback to avoid re-creating the callback
-  const stateRef = useRef({ isActive, isHandUp, seconds, reps, speed, leftReps, rightReps, primaryColor: currentTheme.primary, isAutoStartEnabled, countdown });
+  const stateRef = useRef({ isActive, isHandUp, seconds, reps, speed, leftReps, rightReps, primaryColor: currentTheme.primary, isAutoStartEnabled, countdown, isBeepFlashing });
   useEffect(() => {
-    stateRef.current = { isActive, isHandUp, seconds, reps, speed, leftReps, rightReps, primaryColor: currentTheme.primary, isAutoStartEnabled, countdown };
-  }, [isActive, isHandUp, seconds, reps, speed, leftReps, rightReps, currentTheme.primary, isAutoStartEnabled, countdown]);
+    stateRef.current = { isActive, isHandUp, seconds, reps, speed, leftReps, rightReps, primaryColor: currentTheme.primary, isAutoStartEnabled, countdown, isBeepFlashing };
+  }, [isActive, isHandUp, seconds, reps, speed, leftReps, rightReps, currentTheme.primary, isAutoStartEnabled, countdown, isBeepFlashing]);
 
   // Wake lock to prevent screen sleep
   useWakeLock(isActive);
@@ -422,15 +423,24 @@ export default function App() {
   // Periodic beep logic
   const lastBeepSecond = useRef<number>(-1);
   useEffect(() => {
+    let timer: NodeJS.Timeout;
     if (isActive && beepInterval > 0 && seconds > 0 && seconds % beepInterval === 0) {
       if (seconds !== lastBeepSecond.current) {
-        playBeep(440, 0.3, 'triangle', 0.4); // Sharper and louder for periodic beep
+        playBeep(880, 0.4, 'square', 0.85); // Much sharper and louder square-wave periodic beep signal
         lastBeepSecond.current = seconds;
+        setIsBeepFlashing(true);
+        timer = setTimeout(() => {
+          setIsBeepFlashing(false);
+        }, 500);
       }
     }
     if (!isActive) {
       lastBeepSecond.current = -1;
+      setIsBeepFlashing(false);
     }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
   }, [isActive, seconds, beepInterval]);
 
   // Speed calculation (20-second sliding window)
@@ -578,7 +588,8 @@ export default function App() {
         rightReps: currentRightReps, 
         primaryColor,
         isAutoStartEnabled: currentAutoStart,
-        countdown: currentCountdown
+        countdown: currentCountdown,
+        isBeepFlashing: currentIsBeepFlashing
       } = stateRef.current;
 
       // Auto-start logic: If enabled and not active, start workout on first hand raise
@@ -650,7 +661,7 @@ export default function App() {
           ctx.textBaseline = 'middle';
 
           // Timer
-          ctx.fillStyle = 'white';
+          ctx.fillStyle = currentIsBeepFlashing ? '#ef4444' : 'white';
           ctx.font = 'bold 44px monospace';
           ctx.fillText(formatTime(currentSeconds), padding + 110, padding + 50);
 
@@ -990,7 +1001,13 @@ export default function App() {
             hudPosition.endsWith('right') ? 'items-end' : 
             'items-center'
           }`}>
-            <div className={`text-6xl md:text-9xl font-black tabular-nums transition-all ${isActive ? 'text-white drop-shadow-[0_0_30px_rgba(255,255,255,0.3)]' : 'text-white/30'}`}>
+            <div className={`text-6xl md:text-9xl font-black tabular-nums transition-all ${
+              isBeepFlashing 
+                ? 'text-red-500 scale-105 drop-shadow-[0_0_40px_rgba(239,68,68,0.8)]' 
+                : isActive 
+                  ? 'text-white drop-shadow-[0_0_30px_rgba(255,255,255,0.3)]' 
+                  : 'text-white/30'
+            }`}>
               {formatTime(seconds)}
             </div>
           </div>
