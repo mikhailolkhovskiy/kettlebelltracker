@@ -336,8 +336,19 @@ export default function App() {
       // Start recording if enabled
       if (isRecordingEnabled && recordingCanvasRef.current) {
         try {
-          const stream = recordingCanvasRef.current.captureStream(30);
-          const recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
+          const canvasStream = recordingCanvasRef.current.captureStream(30);
+          const combinedStream = new MediaStream();
+          
+          // Add video tracks from canvas
+          canvasStream.getVideoTracks().forEach(track => combinedStream.addTrack(track));
+          
+          // Add audio tracks from camera source to capture microphone sound
+          if (videoRef.current && videoRef.current.srcObject) {
+            const cameraStream = videoRef.current.srcObject as MediaStream;
+            cameraStream.getAudioTracks().forEach(track => combinedStream.addTrack(track));
+          }
+          
+          const recorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm;codecs=vp9' });
           recordedChunksRef.current = [];
           
           recorder.ondataavailable = (e) => {
@@ -639,12 +650,9 @@ export default function App() {
           ctx.textBaseline = 'middle';
 
           // Timer
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-          ctx.font = 'bold 18px Inter, sans-serif';
-          ctx.fillText(t.time.toUpperCase(), padding + 110, padding + 30);
           ctx.fillStyle = 'white';
           ctx.font = 'bold 44px monospace';
-          ctx.fillText(formatTime(currentSeconds), padding + 110, padding + 70);
+          ctx.fillText(formatTime(currentSeconds), padding + 110, padding + 50);
 
           // Reps
           ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
@@ -698,53 +706,73 @@ export default function App() {
 
     if (videoRef.current && isCameraEnabled) {
       // Create a native constraints object if we have a selected camera
-      const constraints = selectedCameraId 
+      const constraintsWithAudio = selectedCameraId 
+        ? { 
+            video: { deviceId: { exact: selectedCameraId }, width: { ideal: 1280 }, height: { ideal: 720 } },
+            audio: true 
+          }
+        : { 
+            video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+            audio: true 
+          };
+
+      const constraintsVideoOnly = selectedCameraId 
         ? { video: { deviceId: { exact: selectedCameraId }, width: { ideal: 1280 }, height: { ideal: 720 } } }
         : { video: { width: { ideal: 1280 }, height: { ideal: 720 } } };
 
       const startCamera = async () => {
         setCameraError(null);
+        let stream: MediaStream;
         try {
-          const stream = await navigator.mediaDevices.getUserMedia(constraints);
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream;
-            videoRef.current.onloadedmetadata = () => {
-              videoRef.current?.play().catch(e => console.error("Video play error:", e));
-              
-              // Refresh camera list to get labels
-              navigator.mediaDevices.enumerateDevices().then(devices => {
-                const videoDevices = devices.filter(device => device.kind === 'videoinput');
-                setAvailableCameras(videoDevices);
-              });
-
-              const processFrame = async () => {
-                if (videoRef.current && poseRef.current && isComponentMounted.current && isCameraEnabled) {
-                  // Ensure video is ready and not already processing
-                  if (videoRef.current.readyState >= 2 && !isProcessing) {
-                    isProcessing = true;
-                    try {
-                      await poseRef.current.send({ image: videoRef.current });
-                    } catch (error) {
-                      console.error("MediaPipe send error:", error);
-                    } finally {
-                      isProcessing = false;
-                    }
-                  }
-                  animationFrameId = requestAnimationFrame(processFrame);
-                }
-              };
-              animationFrameId = requestAnimationFrame(processFrame);
-            };
-          }
-        } catch (err) {
-          console.error("Error starting camera with constraints:", err);
-          if (err instanceof Error) {
-            if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-              setCameraError('permission');
-            } else {
-              setCameraError('other');
+          // Attempt using video with microphone audio track
+          stream = await navigator.mediaDevices.getUserMedia(constraintsWithAudio);
+        } catch (audioErr) {
+          console.warn("Camera with audio not granted or not available. Falling back to video-only track.", audioErr);
+          try {
+            // Fallback to video only to ensure pose detection continues working without error
+            stream = await navigator.mediaDevices.getUserMedia(constraintsVideoOnly);
+          } catch (err) {
+            console.error("Error starting camera with constraints:", err);
+            if (err instanceof Error) {
+              if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                setCameraError('permission');
+              } else {
+                setCameraError('other');
+              }
             }
+            return;
           }
+        }
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.onloadedmetadata = () => {
+            videoRef.current?.play().catch(e => console.error("Video play error:", e));
+            
+            // Refresh camera list to get labels
+            navigator.mediaDevices.enumerateDevices().then(devices => {
+              const videoDevices = devices.filter(device => device.kind === 'videoinput');
+              setAvailableCameras(videoDevices);
+            });
+
+            const processFrame = async () => {
+              if (videoRef.current && poseRef.current && isComponentMounted.current && isCameraEnabled) {
+                // Ensure video is ready and not already processing
+                if (videoRef.current.readyState >= 2 && !isProcessing) {
+                  isProcessing = true;
+                  try {
+                    await poseRef.current.send({ image: videoRef.current });
+                  } catch (error) {
+                    console.error("MediaPipe send error:", error);
+                  } finally {
+                    isProcessing = false;
+                  }
+                }
+                animationFrameId = requestAnimationFrame(processFrame);
+              }
+            };
+            animationFrameId = requestAnimationFrame(processFrame);
+          };
         }
       };
 
@@ -852,6 +880,7 @@ export default function App() {
               ref={videoRef}
               className="absolute opacity-0 pointer-events-none"
               playsInline
+              muted
             />
             <canvas
               ref={canvasRef}
@@ -961,7 +990,6 @@ export default function App() {
             hudPosition.endsWith('right') ? 'items-end' : 
             'items-center'
           }`}>
-            <span className="text-white/40 text-[10px] font-black uppercase tracking-[0.4em] mb-1 drop-shadow-sm">{t.time}</span>
             <div className={`text-6xl md:text-9xl font-black tabular-nums transition-all ${isActive ? 'text-white drop-shadow-[0_0_30px_rgba(255,255,255,0.3)]' : 'text-white/30'}`}>
               {formatTime(seconds)}
             </div>
